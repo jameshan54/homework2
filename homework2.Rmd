@@ -1,0 +1,146 @@
+---
+title: "homework2"
+author: "James(Changhwan) Han (3923257)"
+date: "4/8/2022"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+# install.packages('tidyverse', repos = "http://cran.us.r-project.org")
+# #install.packages('tidymodels', repos = "http://cran.us.r-project.org")
+# install.packages('ggplot2', repos = "http://cran.us.r-project.org")
+# install.packages('visdat', repos = "http://cran.us.r-project.org")
+# install.packages("corrplot", repos = "http://cran.us.r-project.org")
+# install.packages("discrim", repos = "http://cran.us.r-project.org")
+# install.packages("rlang", repos = "http://cran.us.r-project.org")
+library(tidyverse)
+library(tidymodels)
+library(ggplot2)
+library(visdat)
+library(corrplot)
+library(discrim)
+
+
+```
+
+
+```{r}
+abalone <- read.csv("abalone.csv")
+head(abalone)
+```
+
+# Question 1
+Add age to the data set and describe the distribution of age
+```{r}
+abalone <- abalone %>%
+  mutate(age = rings + 1.5)
+
+abalone %>%
+  ggplot(aes(x = age)) +
+  geom_histogram(bins = 60) +
+  theme_bw()
+```
+Age seems to be normally distributed where mean is around 11.
+
+# Question 2
+Split the abalone data into a training/testing set using
+stratified sampling. 
+```{r}
+set.seed(1014)
+
+abalone2 <- subset(abalone, select = -rings)
+
+abalone_split <- initial_split(abalone2, prop = 0.80,
+                               strata = age)
+abalone_train <- training(abalone_split)
+abalone_test <- training(abalone_split)
+```
+
+# Question 3
+Create a recipe predicting age with all other
+predictor variables. Shouldn't include rings
+```{r}
+# 1. dummy code categorical predictors
+abalone_recipe <- recipe(age ~ ., data = abalone_train) %>%
+  step_dummy(all_nominal_predictors())
+
+abalone_recipe
+
+# 2. creating interactions between type/shucked_weight, longest_shell/diameter, and shucked_weight/shell_weight.
+# 3.4. center/scale all predictors
+abalone_mod <- abalone_recipe %>%
+  step_interact(terms = ~ starts_with("type"):shucked_weight + longest_shell:diameter + shucked_weight:shell_weight) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+
+abalone_mod
+```
+
+# Question 4
+Create and store a linear regression object using "lm"
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine("lm")
+
+lm_model
+```
+
+# Question 5
+1. set up empty work flow 
+2. add the model from Q4
+3. add the recipe from Q3
+```{r}
+lm_wflow <- workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(abalone_mod)
+
+lm_wflow
+```
+
+# Question 6
+Use fit() object to predict the age of a hypothetical female abalone
+```{r}
+lm_fit <- fit(lm_wflow, abalone_train)
+female_age <- data.frame(longest_shell = 0.50, diameter = 0.10, height = 0.30, whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1, type='F')
+
+predict(lm_fit, female_age)
+```
+
+# Question 7
+1. Create a metric set includes R2, RMSE, and MAE
+2. Use predict() and bind_cols() to create a tibble of model's predicted values from the training data along with the actual observed ages
+3. apply metric set to the tibble, report the results, and interpret the R^2
+```{r}
+abalone_train_res <- predict(lm_fit, new_data = abalone_train %>% select(-age))
+abalone_train_res <- bind_cols(abalone_train_res, abalone_train %>% select(age))
+rmse(abalone_train_res, truth = age, estimate = .pred)
+abalone_metrics <- metric_set(rmse, rsq, mae)
+abalone_metrics(abalone_train_res, truth = age, 
+                estimate = .pred)
+```
+The result for R^2 is 0.567. Above 50% of data fit in the data.
+
+# Question 8
+$Var(\hat{f(x_0)})$ and $[Bias(\hat{f(x_0)})]^2$ are the reproducible error, and $Var(\epsilon)$ is the irreducible error.
+
+# Question 9
+Assuming $Var(\hat{f(x_0)}) + [Bias(\hat{f(x_0)})]^2$ is zero, the irreducible error is the minimum value of expected test MSE.
+
+# Question 10
+$$
+\begin{aligned}
+&E\left[\left(y_{0}-\hat{f}\left(x_{0}\right)\right)^{2}\right]=\operatorname{Var}\left(\hat{f}\left(x_{0}\right)\right)+\left[\operatorname{Bias}\left(\hat{f}\left(x_{0}\right)\right)\right]^{2}+\operatorname{Var}(\epsilon) \\
+&=E\left[\left(\hat{f}\left(x_{0}\right)-E\left[\hat{f}\left(x_{0}\right)\right]\right)^{2}\right]+\left[E\left[\hat{f}\left(x_{0}\right)\right]-f\left(x_{0}\right)\right]^{2}+\operatorname{Var}(\epsilon) \\
+&\bullet E\left[\left(\hat{f}\left(x_{0}\right)-E\left[\hat{f}\left(x_{0}\right)\right]\right)^{2}\right]=0 \bullet\left[E\left[\hat{f}\left(x_{0}\right)\right]-f\left(x_{0}\right)\right]^{2}=0 \\
+&E\left[\left(y_{0}-\hat{f}\left(x_{0}\right)\right)^{2}\right]=0+0+\operatorname{Var}(\epsilon)=\operatorname{Var}(\epsilon)
+\end{aligned}
+$$
+
